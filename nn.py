@@ -57,8 +57,8 @@ def wd_cost(regex,wd,scope):
 				costs.append(regloss)
 				names.append(para_name)
 
-		# print the names?
-		print "found %s variables for weight reg"%(len(costs))
+		# print(the names?
+		print("found %s variables for weight reg"%(len(costs)))
 		if len(costs) == 0:
 			return tf.constant(0, dtype=tf.float32, name="empty_"+scope)
 		else:
@@ -291,7 +291,7 @@ def GlobalAvgPooling(x, data_format='NHWC'):
 	axis = [1, 2] if data_format == 'NHWC' else [2, 3]
 	return tf.reduce_mean(x, axis, name='output')
 
-def conv2d(x, out_channel, kernel, padding="SAME", stride=1, activation=tf.identity, dilations=1, use_bias=True,data_format="NHWC", W_init=None, scope="conv"):
+def conv2d(x, out_channel, kernel, padding="SAME", stride=1, activation=tf.identity, dilations=1, use_bias=True,data_format="NHWC", W_init=None, split=1, scope="conv"):
 	with tf.variable_scope(scope):
 		in_shape = x.get_shape().as_list()
 
@@ -302,7 +302,12 @@ def conv2d(x, out_channel, kernel, padding="SAME", stride=1, activation=tf.ident
 
 		kernel_shape = [kernel,kernel]
 
-		filter_shape = kernel_shape + [in_channel,out_channel]
+		filter_shape = kernel_shape + [in_channel, out_channel]
+
+		# group conv implementation
+		if split != 1:
+			assert out_channel % split == 0
+			filter_shape = kernel_shape + [in_channel / split, out_channel]
 
 		if data_format == "NHWC":
 			stride = [1, stride, stride,1]
@@ -318,12 +323,14 @@ def conv2d(x, out_channel, kernel, padding="SAME", stride=1, activation=tf.ident
 
 		conv = tf.nn.conv2d(x, W, stride, padding, dilations=dilations, data_format=data_format)
 
+		assert conv is not None, "Group conv needs tf 1.14+"
+
 		if use_bias:
 			b_init = tf.constant_initializer()
 			b = tf.get_variable('b', [out_channel], initializer=b_init)
 			conv = tf.nn.bias_add(conv,b,data_format=data_format)
 
-		ret = activation(conv,name="output")
+		ret = activation(conv, name="output")
 
 	return ret
 
@@ -406,11 +413,11 @@ def resnet_basicblock(l, ch_out, stride,  dilations=1, deformable=False, tf_pad_
 	l = conv2d(l, ch_out, 3, stride=stride, activation=NormReLU, use_bias=False, data_format="NCHW", scope='conv1')
 	l = conv2d(l, ch_out, 3, use_bias=False, activation=get_bn(use_gn, zero_init=True), data_format="NCHW", scope='conv2')
 	out = l + resnet_shortcut(shortcut, ch_out, stride, activation=get_bn(use_gn, zero_init=False), data_format="NCHW")
-	return tf.nn.relu(out)
+	return out
 
 
 def resnet_bottleneck(l, ch_out, stride, dilations=1, deformable=False, tf_pad_reverse=False, use_gn=False, use_se=False):
-	l, shortcut = l, l
+	shortcut = l
 	if use_gn:
 		NormReLU = GNReLU
 	else:
@@ -448,6 +455,24 @@ def resnet_bottleneck(l, ch_out, stride, dilations=1, deformable=False, tf_pad_r
 		l = l * tf.reshape(squeeze, shape)
 
 	return l + resnet_shortcut(shortcut, ch_out * 4, stride, activation=get_bn(use_gn,zero_init=False),data_format="NCHW")
+
+
+def resnext_32x4d_bottleneck(l, ch_out, stride, dilations=1, deformable=False, tf_pad_reverse=False, use_gn=False, use_se=False):
+	shortcut = l
+
+	if use_gn:
+		NormReLU = GNReLU
+	else:
+		NormReLU = BNReLU
+
+	l = conv2d(l, ch_out * 2, 1, stride=1, activation=NormReLU, scope='conv1', use_bias=False, data_format="NCHW")
+	
+	l = conv2d(l, ch_out * 2, 3, dilations=dilations, stride=stride, activation=NormReLU, scope='conv2', split=32, use_bias=False,data_format="NCHW")
+
+	l = conv2d(l, ch_out * 4, 1, activation=get_bn(use_gn, zero_init=True), scope='conv3', use_bias=False,data_format="NCHW")
+	
+	out = l + resnet_shortcut(shortcut, ch_out * 4, stride, activation=get_bn(use_gn, zero_init=False), data_format="NCHW")
+	return out
 
 def resnet_shortcut(l, n_out, stride, activation=tf.identity,data_format="NCHW",use_gn=False):
 	n_in = l.get_shape().as_list()[1 if data_format == 'NCHW' else 3]
@@ -737,7 +762,7 @@ def dense(x,output_size,W_init=None,b_init=None,activation=tf.identity,use_bias=
 			# we used to apply W on the last dimention
 			# since the input here is not two rank, we flat the input while keeping the last dims
 			keep = 1
-			#print x.get_shape().as_list()
+			#print(x.get_shape().as_list()
 			flat_x = flatten(x,keep) # keeping the last one dim # [N,M,JX,JQ,d] => [N*M*JX*JQ,d]
 		
 		if W_init is None:
@@ -787,17 +812,17 @@ def pretrained_resnet_conv4(image, num_blocks,tf_pad_reverse=False):
 
 	l = conv2d(l, 64, 7, stride=2, activation=BNReLU, padding='VALID',scope="conv0",use_bias=False,data_format="NCHW")
 
-	#print l.get_shape()# (1,64,?,?)
+	#print(l.get_shape()# (1,64,?,?)
 	l = tf.pad(l, [[0, 0], [0, 0], maybe_reverse_pad(0, 1,tf_pad_reverse), maybe_reverse_pad(0, 1,tf_pad_reverse)])
 	l = MaxPooling(l, shape=3, stride=2, padding='VALID',scope='pool0',data_format="NCHW")
 
-	#print l.get_shape()# (1,64,?,?)
+	#print(l.get_shape()# (1,64,?,?)
 	l = resnet_group(l, 'group0', resnet_bottleneck, 64, num_blocks[0], stride=1,tf_pad_reverse=tf_pad_reverse)
-	#print l.get_shape()# (1,256,?,?)
+	#print(l.get_shape()# (1,256,?,?)
 	# TODO replace var by const to enable folding
 	#l = tf.stop_gradient(l) # froze outside
 	l = resnet_group(l, 'group1', resnet_bottleneck, 128, num_blocks[1], stride=2,tf_pad_reverse=tf_pad_reverse)
-	#print l.get_shape()# (1,512,?,?)
+	#print(l.get_shape()# (1,512,?,?)
 	l = resnet_group(l, 'group2', resnet_bottleneck, 256, num_blocks[2], stride=2,tf_pad_reverse=tf_pad_reverse)
 	return l
 
@@ -807,11 +832,11 @@ def resnet_conv5(image,num_block,reuse=False,tf_pad_reverse=False):
 	return l
 
 # fpn_resolution_requirement is 32 by default FPN
-def resnet_fpn_backbone(image, num_blocks,resolution_requirement, use_deformable=False, use_dilations=False, tf_pad_reverse=False,finer_resolution=False,freeze=0,use_gn=False,use_basic_block=False, use_se=False):
+def resnet_fpn_backbone(image, num_blocks,resolution_requirement, use_deformable=False, use_dilations=False, tf_pad_reverse=False,finer_resolution=False,freeze=0,use_gn=False,use_basic_block=False, use_se=False, use_resnext=False):
 	assert len(num_blocks) == 4
 	shape2d = tf.shape(image)[2:]
 
-	# this gets the nearest H, W that can be zheng chu by 32
+	# this gets the nearest H, W that is a multiplier of 32
 	# 720 -> 736, 1080 -> 1088
 	mult = resolution_requirement * 1.0
 	new_shape2d = tf.to_int32(tf.ceil(tf.to_float(shape2d) / mult) * mult)
@@ -827,6 +852,8 @@ def resnet_fpn_backbone(image, num_blocks,resolution_requirement, use_deformable
 	block_func = resnet_bottleneck
 	if use_basic_block:
 		block_func = resnet_basicblock
+	if use_resnext:
+		block_func = resnext_32x4d_bottleneck
 
 	pad_base = maybe_reverse_pad(2, 3,tf_pad_reverse)
 	
@@ -836,7 +863,7 @@ def resnet_fpn_backbone(image, num_blocks,resolution_requirement, use_deformable
 			[pad_base[0], pad_base[1] + pad_shape2d[1]]])
 	l.set_shape([None,channel,None,None])
 
-	# 720, 1280 -> 736, 1280 / 1080, 1920 -> 1088, 1920, zhengchu by 32
+	# 720, 1280 -> 736, 1280 / 1080, 1920 -> 1088, 1920, a multiplier of 32
 	# actually 741/1093 due to the pad_base of [2, 3]
 	# pad_base is for first conv and max pool
 	#l = tf.Print(l, data=[tf.shape(l)], summarize=10) 
@@ -1073,7 +1100,7 @@ def get_so_labels(boxes, gt_boxes, gt_labels, config):
 	box_labels = []
 	for i in xrange(len(config.small_objects)):
 		iou = pairwise_iou(boxes[i], gt_boxes[i])
-		#print iou.get_shape()  # [1536,0] # gt_boxes could be empty
+		#print(iou.get_shape()  # [1536,0] # gt_boxes could be empty
 
 		def sample_fg_bg(iou):
 			#fg_ratio = 0.2

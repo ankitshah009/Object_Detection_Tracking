@@ -1,6 +1,6 @@
 # CMU Object Detection & Tracking for Surveillance Video Activity Detection
 
-This repository contains the code and models for object detection and tracking from the CMU [DIVA](https://www.iarpa.gov/index.php/research-programs/diva) system. Our system (INF & MUDSML) achieves the **best performance** on the ActEv [leaderboard](https://actev.nist.gov/prizechallenge#tab_leaderboard). 
+This repository contains the code and models for object detection and tracking from the CMU [DIVA](https://www.iarpa.gov/index.php/research-programs/diva) system. Our system (INF & MUDSML) achieves the **best performance** on the ActEv [leaderboard](https://actev.nist.gov/prizechallenge#tab_leaderboard) ([Cached](https://www.cs.cmu.edu/~junweil/resources/actev-prizechallenge-06-2019.png)).
 
 If you find this code useful in your research then please cite
 
@@ -17,7 +17,7 @@ If you find this code useful in your research then please cite
 
 
 ## Introduction
-We utilize state-of-the-art object deteciton and tracking algorithm in surveillance videos. Our best object detection model basically uses Faster RCNN with a backbone of Resnet-101 with dilated CNN and FPN. The tracking algo (Deep SORT) uses ROI features from the object detection model.
+We utilize state-of-the-art object deteciton and tracking algorithm in surveillance videos. Our best object detection model basically uses Faster RCNN with a backbone of Resnet-101 with dilated CNN and FPN. The tracking algo (Deep SORT) uses ROI features from the object detection model. The ActEV trained models are good for small object detection in outdoor scenes. For indoor cameras, COCO trained models are better.
 
 
 <div align="center">
@@ -28,9 +28,9 @@ We utilize state-of-the-art object deteciton and tracking algorithm in surveilla
 </div>
 
 ## Dependencies
-The code is originally written for Tensorflow v1.10 with Python 2.7 but it works on v1.13.1, too. Note that I didn't change the code for v1.13.1 instead I just disable Tensorflow warnings and logging.
+The code is originally written for Tensorflow v1.10 with Python 2/3 but it works on v1.13.1, too. Note that I didn't change the code for v1.13.1 instead I just disable Tensorflow warnings and logging. I have also tested this on tf v1.14.0 (ResNeXt backbone will need >=1.14 for group convolution support).
 
-Other dependencies: numpy==1.14; scipy; sklearn; cv2; matplotlib; pycocotools
+Other dependencies: numpy; scipy; sklearn; cv2; matplotlib; pycocotools
 
 ## Code Overview
 - `obj_detect.py`: Inference code for object detection.
@@ -76,6 +76,14 @@ $ python ../../vis_json.py Person.lst ../../v1-val_testvideos_frames/ Person_jso
 $ python ../../vis_json.py Vehicle.lst ../../v1-val_testvideos_frames/ Vehicle_json/ Vehicle_vis
 $ ffmpeg -framerate 30 -i Vehicle_vis/VIRAT_S_000205_05_001092_001124/VIRAT_S_000205_05_001092_001124_F_%08d.jpg Vehicle_vis_video.mp4
 $ ffmpeg -framerate 30 -i Person_vis/VIRAT_S_000205_05_001092_001124/VIRAT_S_000205_05_001092_001124_F_%08d.jpg Person_vis_video.mp4
+
+# or you could put "Person/Vehicle" visualization into the same video
+$ ls $PWD/v1-val_testvideos/* > v1-val_testvideos.abs.lst
+$ python get_frames_resize.py v1-val_testvideos.abs.lst v1-val_testvideos_frames/ --use_2level
+$ python tracks_to_json.py test_track_out/ v1-val_testvideos.abs.lst test_track_out_json
+$ python vis_json.py v1-val_testvideos.abs.lst v1-val_testvideos_frames/ test_track_out_json/ test_track_out_vis
+# then use ffmpeg to make videos
+
 ```
 Now you have the tracking visualization videos for both "Person" and "Vehicle" class.
 
@@ -119,7 +127,7 @@ These are the models you can use for inferencing. The original ActEv annotations
 <table>
   <tr>
   	<td colspan="6">
-  		<a href="https://aladdin-eax.inf.cs.cmu.edu/shares/diva_obj_detect_models/models/obj_v3_model.tgz">Object v3</a> (<a href="https://aladdin-eax.inf.cs.cmu.edu/shares/diva_obj_detect_models/models/obj_v3.pb">Frozen Graph</a>)
+  		<a href="https://aladdin-eax.inf.cs.cmu.edu/shares/diva_obj_detect_models/models/obj_v3_model.tgz">Object v3</a> (<a href="https://aladdin-eax.inf.cs.cmu.edu/shares/diva_obj_detect_models/models/obj_v3.pb">Frozen Graph for tf v1.13</a>)
   	: Trained on v1-train, Dilated CNN</td>
   </tr>
   <tr>
@@ -244,13 +252,116 @@ These are the models you can use for inferencing. The original ActEv annotations
   </tr>
 </table>
 
+
+<table>
+  <tr>
+    <td colspan="6">
+      <a href="https://aladdin-eax.inf.cs.cmu.edu/shares/diva_obj_detect_models/models/obj_coco_tfv1.14.pb">Object COCO</a>
+    : COCO trained Resnet-101 FPN model. Better for indoor scenes.</td>
+  </tr>
+  <tr>
+    <td>Eval on v1-val</td>
+    <td>Person</td>
+    <td>Bike</td>
+    <td>Push_Pulled_Object</td>
+    <td>Vehicle</td>
+    <td>Mean</td>
+  </tr>
+  <tr>
+    <td>AP</td>
+    <td>0.378</td>
+    <td>0.398</td>
+    <td>N/A</td>
+    <td>0.947</td>
+    <td>N/A</td>
+  </tr>
+  <tr>
+    <td>AR</td>
+    <td>0.585</td>
+    <td>0.572</td>
+    <td>N/A</td>
+    <td>0.965</td>
+    <td>N/A</td>
+  </tr>
+</table>
+
+Activity Box Experiments:
+<table>
+  <tr>
+    <td colspan="8">
+      <a href="https://drive.google.com/open?id=1SWvdHJcTDgxgEkX3l0UbhmzU47GYTHYJ">BUPT-MCPRL</a> at the <a href="http://activity-net.org/challenges/2019/program.html">ActivityNet</a> Workshop, CVPR 2019: 3D Faster-RCNN (Numbers taken from their slides)</td>
+  </tr>
+  <tr>
+    <td>Evaluation</td>
+    <td>Person-Vehicle</td>
+    <td>Pull</td>
+    <td>Riding</td>
+    <td>Talking</td>
+    <td>Transport_HeavyCarry</td>
+    <td>Vehicle-Turning</td>
+    <td>activity_carrying</td>
+  </tr>
+  <tr>
+    <td>AP</td>
+    <td>0.232</td>
+    <td>0.38</td>
+    <td>0.468</td>
+    <td>0.258</td>
+    <td>0.183</td>
+    <td>0.278</td>
+    <td>0.235</td>
+  </tr>
+</table>
+
+<table>
+  <tr>
+    <td colspan="8">
+      Our Actbox v1: Trained on v1-train, Dilated CNN, Class-agnostic</td>
+  </tr>
+  <tr>
+    <td>Eval on v1-val</td>
+    <td>Person-Vehicle</td>
+    <td>Pull</td>
+    <td>Riding</td>
+    <td>Talking</td>
+    <td>Transport_HeavyCarry</td>
+    <td>Vehicle-Turning</td>
+    <td>activity_carrying</td>
+  </tr>
+  <tr>
+    <td>AP</td>
+    <td>0.378</td>
+    <td>0.582</td>
+    <td>0.435</td>
+    <td>0.497</td>
+    <td>0.438</td>
+    <td>0.403</td>
+    <td>0.425</td>
+  </tr>
+  <tr>
+    <td>AR</td>
+    <td>0.780</td>
+    <td>0.973</td>
+    <td>0.942</td>
+    <td>0.876</td>
+    <td>0.901</td>
+    <td>0.899</td>
+    <td>0.899</td>
+  </tr>
+</table>
+
 ## Other things I have tried
 These are my experiences with working on this [surveillance dataset](https://actev.nist.gov/):
 1. FPN provides significant improvement over non-FPN backbone;
-2. Dilated CNN in backbone also helps;
-3. Cascade RCNN doesn't help (IOU=0.5). I'm using IOU=0.5 in my evaluation since the original annotations are not "tight" bounding boxes.
-4. Decoupled RCNN slightly improves AP (Person: 0.836 -> 0.837) but takes 7x more time.
-5. SoftNMS shows mixed results and add 5% more computation time to system (since I used the CPU version). So I don't use it.
+2. Dilated CNN in backbone also helps but Squeeze-Excitation block is unclear (see model obj_v6);
+3. Deformable CNN in backbone seems to achieve same improvement as dilated CNN but [my implementation](nn.py#L1375) is way too slow.
+4. Cascade RCNN doesn't help (IOU=0.5). I'm using IOU=0.5 in my evaluation since the original annotations are not "tight" bounding boxes.
+5. Decoupled RCNN (using a separate Resnet-101 for box classification) slightly improves AP (Person: 0.836 -> 0.837) but takes 7x more time.
+6. SoftNMS shows mixed results and add 5% more computation time to system (since I used the CPU version). So I don't use it.
+7. Tried [Mix-up](https://arxiv.org/abs/1710.09412) by randomly mixing ground truth bounding boxes from different frames. Doesn't improve performance.
+8. Focal loss doesn't help.
+9. [Relation Network](https://arxiv.org/abs/1711.11575) does not improve and the model is huge ([my implementation](nn.py#L100)).
+10. ResNeXt does not see significant improvement on this dataset.
 
 ## Training & Testing
 Instruction to train a new model is [here](TRAINING.md).
@@ -259,7 +370,8 @@ Instruction to train a new model is [here](TRAINING.md).
 **TL;DR**:
 - TF v1.10 -> v1.13 (CUDA 9 & cuDNN v7.1 -> CUDA 10 & cuDNN v7.4) ~ +9% faster
 - Use frozen graph  ~ +30% faster
-- Use TensorRT optimized graph ~ +?% faster
+- Use TensorRT (FP32/FP16) optimized graph ~ +0% faster
+- Use TensorRT (INT8) optimized graph ?
 
 Experiments are recorded [here](SPEED.md).
 

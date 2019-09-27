@@ -11,6 +11,7 @@ parser.add_argument("videonamelst")
 parser.add_argument("framepath")
 parser.add_argument("jsonpath")
 parser.add_argument("despath")
+parser.add_argument("--score_thres", default=0.0, type=float)
 
 PALETTE_HEX = [
 	"#000000", "#FFFF00", "#1CE6FF", "#FF34FF", "#FF4A46", "#008941", "#006FA6", "#A30059",
@@ -122,10 +123,10 @@ def draw_boxes(im, boxes, labels=None, colors=None,font_scale=0.6,font_thick=1,b
 		return im
 
 	boxes = np.asarray(boxes,dtype="int")
-	
+
 	FONT = cv2.FONT_HERSHEY_SIMPLEX
 	FONT_SCALE = font_scale
-	
+
 
 	if labels is not None:
 		assert len(labels) == len(boxes), "{} != {}".format(len(labels), len(boxes))
@@ -167,7 +168,7 @@ def draw_boxes(im, boxes, labels=None, colors=None,font_scale=0.6,font_thick=1,b
 			if top_left[1] < 0:	 # out of image
 				top_left[1] = box[3] - 1.3 * lineh
 				bottom_left[1] = box[3] - 0.3 * lineh
-		
+
 			textbox = IntBox(int(top_left[0]), int(top_left[1]),
 							 int(top_left[0] + linew), int(top_left[1] + lineh))
 			textbox.clip_by_shape(im.shape[:2])
@@ -182,7 +183,7 @@ def draw_boxes(im, boxes, labels=None, colors=None,font_scale=0.6,font_thick=1,b
 				best_color_ind = (np.square(COLOR_CANDIDATES - mean_color) *
 								  COLOR_DIFF_WEIGHT).sum(axis=1).argmax()
 				best_color = COLOR_CANDIDATES[best_color_ind].tolist()
-			
+
 			if bottom_text:
 				cv2.putText(im, label, (box[0] + 2,box[3] - 4 + offset),
 						FONT, FONT_SCALE, color=best_color)
@@ -205,14 +206,14 @@ def draw_boxes(im, boxes, labels=None, colors=None,font_scale=0.6,font_thick=1,b
 		cv2.rectangle(im, (box[0], box[1]), (box[2], box[3]),
 					  color=best_color, thickness=box_thick)
 	return im
-	
+
 if __name__ == "__main__":
 	args = parser.parse_args()
 
-	videonames = [os.path.splitext(os.path.basename(line.strip()))[0] for line in open(args.videonamelst, "r").readlines()]	
+	videonames = [os.path.splitext(os.path.basename(line.strip()))[0] for line in open(args.videonamelst, "r").readlines()]
 
 	color_queue = copy.deepcopy(COLORS)
-	color_assign = {} # track Id -> 
+	color_assign = {} # track Id -> / "cat_name" ->
 
 	for videoname in tqdm(videonames, ascii=True):
 		frames = glob(os.path.join(args.framepath, videoname, "*.jpg"))
@@ -234,19 +235,33 @@ if __name__ == "__main__":
 				with open(jsonfile, "r") as f:
 					data = json.load(f)
 				for one in data:
+					if one['score'] < args.score_thres:
+						continue
 					box = one['bbox'] # [x, y, w, h]
 					box = [box[0], box[1], box[0] + box[2], box[1] + box[3]]
 					boxes.append(box)
-					trackId = int(one['trackId'])
-					
-					labels.append("%.3f:#%s"%(float(one['score']), trackId))
-					if not color_assign.has_key(trackId):
-						this_color = color_queue.pop()
-						color_assign[trackId] = this_color
-						# recycle it 
-						color_queue.insert(0, this_color)
-					color = color_assign[trackId]
-					box_colors.append(color)
+					if one.has_key("trackId"):
+						trackId = int(one['trackId'])
+						color_key = (trackId, one['cat_name'])
+						labels.append("%s: #%s"%(one['cat_name'], trackId))
+						if not color_assign.has_key(color_key):
+							this_color = color_queue.pop()
+							color_assign[color_key] = this_color
+							# recycle it
+							color_queue.insert(0, this_color)
+						color = color_assign[color_key]
+						box_colors.append(color)
+					else:
+						# no trackId, just visualize the boxes
+						cat_name = one['cat_name']
+						labels.append("%s: %.2f"%(cat_name, float(one['score'])))
+						if not color_assign.has_key(cat_name):
+							this_color = color_queue.pop()
+							color_assign[cat_name] = this_color
+							# recycle it
+							color_queue.insert(0, this_color)
+						color = color_assign[cat_name]
+						box_colors.append(color)
 
 			ori_im = cv2.imread(frame, cv2.IMREAD_COLOR)
 
